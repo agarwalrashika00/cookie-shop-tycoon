@@ -108,6 +108,9 @@
   function render() {
     const count=state.history.length, over=isOver();
     $('cash').textContent=money(state.cash);
+    $('cash-status').textContent=over
+      ? (count>=30 ? 'Your 30-day journey is complete.' : 'Shop closed. Start fresh to bake again.')
+      : 'Ready for your next batch';
     const profit=round(state.cash-100);
     $('total-profit').textContent=(profit>0?'+':'')+money(profit);
     $('total-profit').className=profit<0?'negative':'';
