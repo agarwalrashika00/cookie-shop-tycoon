@@ -4,6 +4,11 @@
   const $ = id => document.getElementById(id);
   const money = n => new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'}).format(n);
   const round = n => Math.round((n + Number.EPSILON) * 100) / 100;
+  const varieties = {
+    classic: {name:'Chocolate chip', cost:.50, price:2, reference:1.5, demand:1, note:'The neighborhood favorite. A reliable all-rounder.'},
+    oatmeal: {name:'Oatmeal raisin', cost:.35, price:1.75, reference:1.25, demand:.9, note:'A budget-friendly bake with a smaller, loyal following.'},
+    double: {name:'Double chocolate', cost:.80, price:2.75, reference:2, demand:.85, note:'Rich ingredients, a premium price, and a little less foot traffic.'}
+  };
   const forecasts = [
     {title:'A good day for cookies', text:'Steady foot traffic. A classic day at the shop.', factor:1, icon:'☀'},
     {title:'Rain on the window', text:'A quieter street today. Plan a smaller, cozy batch.', factor:.75, icon:'☂'},
@@ -11,12 +16,20 @@
     {title:'A sweet weekend ahead', text:'Weekend wanderers are looking for a treat.', factor:1.4, icon:'☀'},
     {title:'A slow and peaceful day', text:'Fewer passersby. Watch your costs today.', factor:.85, icon:'☁'}
   ];
-  const fresh = () => ({cash:100, history:[], forecast:0});
+  const fresh = () => ({cash:100, history:[], forecast:0, variety:'classic', prices:{classic:2, oatmeal:1.75, double:2.75}});
   let state = fresh();
   try {
     const saved = JSON.parse(localStorage.getItem(KEY));
     if (saved && Number.isFinite(saved.cash) && saved.cash >= 0 && Array.isArray(saved.history) && saved.history.length <= 30 && Number.isInteger(saved.forecast) && forecasts[saved.forecast] && saved.history.every(r => ['day','baked','sold','price','revenue','expenses','profit','cash','ads'].every(k => Number.isFinite(r[k])))) state = saved;
   } catch (_) { /* Storage may be unavailable in private or file browsing. */ }
+  // Older games baked chocolate chip only; retain their history and financials.
+  state.variety = Object.hasOwn(varieties, state.variety) ? state.variety : 'classic';
+  state.prices = Object.fromEntries(Object.entries(varieties).map(([id, v]) => {
+    const price = state.prices?.[id];
+    return [id, Number.isFinite(price) && price >= .25 && price <= 20 ? price : v.price];
+  }));
+  const recipeFor = r => varieties[Object.hasOwn(varieties, r.variety) ? r.variety : 'classic'];
+  const ingredientCost = r => round(r.baked * recipeFor(r).cost);
   const save = () => { try {localStorage.setItem(KEY, JSON.stringify(state));} catch (_) {$('strategy-tip').textContent = 'Browser storage is unavailable. Keep this tab open to retain your game.';} };
   const isOver = () => state.history.length >= 30 || state.cash < 5;
   let animationTimer, animationRunning = false;
@@ -70,10 +83,18 @@
     animationTimer = setTimeout(() => finishAnimation(r), count ? (count - 1) * gap + duration : 1600);
     $('scene-status').closest('.shop-scene').scrollIntoView({behavior:'smooth', block:'center'});
   }
-  function values() {return {baked:Number($('quantity').value), price:Number($('price').value), ads:Number($('advertising').value)};}
+  function values() {return {baked:Number($('quantity').value), price:Number($('price').value), ads:Number($('advertising').value), variety:state.variety};}
+  function showRecipe() {
+    const recipe = varieties[state.variety];
+    $('variety').value = state.variety;
+    $('recipe-cost').textContent = `${money(recipe.cost)} / cookie`;
+    $('recipe-note').textContent = recipe.note;
+    $('suggested-price').textContent = `Suggested ${money(recipe.price)}`;
+    $('price').value = state.prices[state.variety].toFixed(2);
+  }
   function updateCost() {
-    const v=values(), cost=round(v.baked*.5+v.ads+5);
-    $('ingredient-cost').textContent=money(v.baked*.5);
+    const v=values(), cost=round(ingredientCost(v)+v.ads+5);
+    $('ingredient-cost').textContent=money(ingredientCost(v));
     $('ad-cost').textContent=money(v.ads);
     $('investment').textContent=money(cost);
     const valid = $('plan-form').checkValidity() && Number.isInteger(v.baked) && Number.isFinite(cost) && cost<=state.cash;
@@ -82,7 +103,7 @@
   }
   function showResult(r) {
     $('result-heading').textContent=`Day ${r.day}: that's a wrap.`;
-    $('results').innerHTML=`<div class="result-summary"><div class="eyebrow">TODAY'S NET ${r.profit>=0?'PROFIT':'LOSS'}</div><div class="result-profit ${r.profit>=0?'positive':'negative'}">${r.profit>0?'+':''}${money(r.profit)}</div><p>${r.sold===r.baked && r.baked>0?'Sold out. A delicious day at the shop!':r.profit>=0?'Another day, another step toward your empire.':'Every batch is a lesson. Adjust your recipe tomorrow.'}</p></div><div class="result-metrics"><div><span>Cookies sold</span><strong>${r.sold} <small>/ ${r.baked} baked</small></strong></div><div><span>Revenue</span><strong>${money(r.revenue)}</strong></div><div><span>Total expenses</span><strong>${money(r.expenses)}</strong></div><div><span>Cash remaining</span><strong>${money(r.cash)}</strong></div></div><div class="result-note">${r.baked-r.sold} unsold cookies discarded. Expenses include ${money(r.baked*.5)} in ingredients, ${money(r.ads)} in advertising, and $5.00 in shop costs.</div>`;
+    $('results').innerHTML=`<div class="result-summary"><div class="eyebrow">TODAY'S NET ${r.profit>=0?'PROFIT':'LOSS'}</div><div class="result-profit ${r.profit>=0?'positive':'negative'}">${r.profit>0?'+':''}${money(r.profit)}</div><p>${r.sold===r.baked && r.baked>0?'Sold out. A delicious day at the shop!':r.profit>=0?'Another day, another step toward your empire.':'Every batch is a lesson. Adjust your recipe tomorrow.'}</p><p class="recipe-result">${recipeFor(r).name} · ${money(r.price)} each</p></div><div class="result-metrics"><div><span>Cookies sold</span><strong>${r.sold} <small>/ ${r.baked} baked</small></strong></div><div><span>Revenue</span><strong>${money(r.revenue)}</strong></div><div><span>Total expenses</span><strong>${money(r.expenses)}</strong></div><div><span>Cash remaining</span><strong>${money(r.cash)}</strong></div></div><div class="result-note">${r.baked-r.sold} unsold cookies discarded. Expenses include ${money(ingredientCost(r))} in ${recipeFor(r).name.toLowerCase()} ingredients, ${money(r.ads)} in advertising, and $5.00 in shop costs.</div>`;
   }
   function render() {
     const count=state.history.length, over=isOver();
@@ -100,7 +121,7 @@
     document.querySelector('.forecast-icon').textContent=f.icon;
     $('ledger-count').textContent=`${count} ${count===1?'day':'days'} completed`;
     if(count){
-      $('ledger-body').innerHTML=state.history.slice().reverse().map(r=>`<tr><td>${String(r.day).padStart(2,'0')}</td><td>${r.baked} / ${r.sold}</td><td>${money(r.price)}</td><td>${money(r.revenue)}</td><td>${money(r.expenses)}</td><td class="${r.profit>=0?'positive':'negative'}">${r.profit>0?'+':''}${money(r.profit)}</td><td>${money(r.cash)}</td></tr>`).join('');
+      $('ledger-body').innerHTML=state.history.slice().reverse().map(r=>`<tr><td>${String(r.day).padStart(2,'0')}<small class="ledger-variety">${recipeFor(r).name}</small></td><td>${r.baked} / ${r.sold}</td><td>${money(r.price)}</td><td>${money(r.revenue)}</td><td>${money(r.expenses)}</td><td class="${r.profit>=0?'positive':'negative'}">${r.profit>0?'+':''}${money(r.profit)}</td><td>${money(r.cash)}</td></tr>`).join('');
       showResult(state.history[count-1]);
     }
     $('plan-title').textContent=count?'A new day. A fresh batch.':"Let's open up shop.";
@@ -116,13 +137,24 @@
     }
     updateCost();
   }
-  $('plan-form').addEventListener('input',updateCost);
+  $('variety').addEventListener('change', () => {
+    if (!Object.hasOwn(varieties, $('variety').value)) return;
+    state.variety = $('variety').value;
+    showRecipe(); updateCost(); save();
+  });
+  $('plan-form').addEventListener('input', () => {
+    const price = Number($('price').value);
+    if ($('price').value && Number.isFinite(price) && price >= .25 && price <= 20) {
+      state.prices[state.variety] = price; save();
+    }
+    updateCost();
+  });
   $('plan-form').addEventListener('submit',event=>{
     event.preventDefault();updateCost();if($('bake').disabled)return;
-    const v=values(), expenses=round(v.baked*.5+v.ads+5);
+    const v=values(), recipe=varieties[v.variety], expenses=round(ingredientCost(v)+v.ads+5);
     // Price-sensitive demand, diminishing advertising returns, and modest daily variation.
     const traffic=(55+24*Math.sqrt(v.ads))*forecasts[state.forecast].factor;
-    const demand=Math.max(0,Math.round(traffic*Math.exp(-.65*(v.price-1.5))*(.85+Math.random()*.3)));
+    const demand=Math.max(0,Math.round(traffic*recipe.demand*Math.exp(-.65*(v.price-recipe.reference))*(.85+Math.random()*.3)));
     const sold=Math.min(v.baked,demand),revenue=round(sold*v.price),profit=round(revenue-expenses);
     state.cash=round(state.cash+profit);
     state.history.push({day:state.history.length+1,...v,sold,revenue,expenses,profit,cash:state.cash});
@@ -132,6 +164,6 @@
   $('restart').addEventListener('click',()=>$('restart-dialog').showModal());
   $('cancel-restart').addEventListener('click',()=>$('restart-dialog').close());
   $('confirm-restart').addEventListener('click',()=>{state=fresh();save();location.reload();});
-  render();
+  showRecipe();render();
   if (state.history.length) finishAnimation(state.history[state.history.length-1]);
 })();
